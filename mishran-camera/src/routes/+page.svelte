@@ -185,19 +185,37 @@ onDestroy(() => {
 <main>
 	<CompactDisk />
 
-	{#if pageState === PAGES.IP_INPUT}
-		<div class="placeholder" ></div>
-		<div class="contents">
-			<div class="placeholder__action">
-				<button class="btn--white" onclick={connect} disabled={isConnecting}>
-					{#if isConnecting}
-						CONNECTING...
-					{:else}
-						CONNECT
-					{/if}
-				</button>
+		{#if pageState === PAGES.IP_INPUT}
+
+			<div class="placeholder" style="display: flex; justify-content: center; align-items: center;">
+
+				<h1 style="font-size: 1rem; font-weight: 700; min-height: 1.2rem; margin: 0;">READY</h1>
+
 			</div>
-		</div>
+
+			<div class="contents">
+
+				<div class="placeholder__action">
+
+					<button class="btn--white" onclick={connect} disabled={isConnecting}>
+
+						{#if isConnecting}
+
+							CONNECTING...
+
+								
+
+						{:else}
+
+							CONNECT
+
+						{/if}
+
+					</button>
+
+				</div>
+
+			</div>
 	{:else if pageState === PAGES.CAMERA_VIEW}
 		<div class="placeholder" ></div>
 		<div class="contents">
