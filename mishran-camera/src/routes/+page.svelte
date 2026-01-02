@@ -8,7 +8,8 @@ import { ScreenOrientation } from '@capacitor/screen-orientation';
 
 const PAGES = {
 	IP_INPUT: 0,
-	CAMERA_VIEW: 1
+	CAMERA_VIEW: 1,
+	PROCESSING: 2
 };
 
 // Reactive state
@@ -161,6 +162,7 @@ function startRecording() {
 		if (socket && socket.readyState === WebSocket.OPEN) {
 			socket.send(JSON.stringify({ type: 'recording_fully_stopped' }));
 		}
+		pageState = PAGES.PROCESSING;
 	};
 	
 	recorder.start(1000);
@@ -223,6 +225,15 @@ onDestroy(() => {
 			<div class="img">
 				<img src="/tablet.png" alt="Device Frame" />
 				<video class="video-feed" bind:this={videoElement} autoplay playsinline muted ></video>
+			</div>
+		</div>
+	{:else if pageState === PAGES.PROCESSING}
+		<div class="placeholder" style="display: flex; justify-content: center; align-items: center;">
+			<h1 style="font-size: 1rem; font-weight: 700; min-height: 1.2rem; margin: 0;">PROCESSING</h1>
+		</div>
+		<div class="contents">
+			<div class="placeholder__action">
+				<!-- Future button can go here -->
 			</div>
 		</div>
 	{/if}
