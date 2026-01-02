@@ -1,0 +1,9 @@
+{
+  "appId": "com.laddu.mishran",
+  "appName": "mishran-host",
+  "webDir": "build",
+  "server": {
+      "androidScheme": "http",
+      "cleartext": true
+    }
+}
