@@ -1,0 +1,9 @@
+{
+  "appId": "com.mishran.camera",
+  "appName": "MishranCamera",
+  "webDir": "build",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  }
+}

@@ -1,14 +1,10 @@
 <script>
 import CompactDisk from './cd.svelte';
-import { onMount, onDestroy } from 'svelte';
-
-// Constants for cleaner code
-const KEYPAD_ROWS = [
-	['1', '2', '3'],
-	['4', '5', '6'],
-	['7', '8', '9'],
-	['.', '0', 'C']
-];
+import { onMount, onDestroy, tick } from 'svelte';
+import { StatusBar } from '@capacitor/status-bar';
+import { App } from '@capacitor/app';
+import { Camera } from '@capacitor/camera';
+import { ScreenOrientation } from '@capacitor/screen-orientation';
 
 const PAGES = {
 	IP_INPUT: 0,
@@ -19,25 +15,45 @@ const PAGES = {
 let pageState = $state(PAGES.IP_INPUT);
 let cameraViewStatus = $state('CONNECTED');
 
+onMount(async () => {
+	try {
+		await StatusBar.setOverlaysWebView({ overlay: true });
+		await StatusBar.hide();
+	} catch (error) {
+		console.error('Error setting up environment:', error);
+	}
+
+	App.addListener('backButton', () => {
+		if (pageState === PAGES.CAMERA_VIEW) {
+			disconnectAndReset();
+		} else {
+			App.exitApp();
+		}
+	});
+});
+
+function disconnectAndReset() {
+	if (camera) {
+		camera.getTracks().forEach(track => track.stop());
+		camera = null;
+	}
+	if (socket) {
+		socket.close();
+		socket = null;
+	}
+	pageState = PAGES.IP_INPUT;
+	status = 'Ready to connect';
+}
+
 // Core variables (keeping the original structure)
 let camera = null;
 let socket = null;
 let recorder = null;
 let videoElement;
-let ipAddress = $state('');
+// Default IP set to 172.19.70.28:8000 as requested
+let ipAddress = $state('172.19.70.28:8080');
 let status = $state('Ready to connect');
 let isConnecting = $state(false);
-
-// Handle dialer input
-function handleKeyPress(key) {
-	if (key === 'C') {
-		ipAddress = '';
-	} else if (key === 'N') {
-		connect();
-	} else {
-		ipAddress += key;
-	}
-}
 
 async function connect() {
 	const serverAddress = ipAddress.trim();
@@ -50,37 +66,37 @@ async function connect() {
 	status = 'Initializing camera...';
 	
 	try {
+		// Request permissions explicitly for Android
+		await Camera.requestPermissions();
+
 		camera = await navigator.mediaDevices.getUserMedia({ 
-			video: true, 
+			video: {
+				facingMode: 'environment',
+				width: { ideal: 1280 },
+				height: { ideal: 720 },
+				aspectRatio: { ideal: 1.7777777778 }
+			}, 
 			audio: true 
 		});
 		
-		// ✅ --- THIS IS THE DEBUGGING CODE --- ✅
-		// It will print out all the media tracks your app receives.
-		console.log("Inspecting tracks in the media stream:");
-		camera.getTracks().forEach(track => {
-			console.log(`- Found track: kind=${track.kind}, label=${track.label}`);
-		});
-		// ✅ ------------------------------------ ✅
-		
-		videoElement.srcObject = camera;
-	} catch (err) {
-		console.error("getUserMedia error:", err);
-		status = 'Error: Could not access camera. Please grant permission.';
-		isConnecting = false;
-		return;
-	}
-	
-	videoElement.onloadedmetadata = () => {
+		console.log("Camera access granted.");
+
 		const clientId = 'client_' + Math.floor(Math.random() * 10000);
 		const wsUrl = `ws://${serverAddress}/${clientId}`;
 		
 		socket = new WebSocket(wsUrl);
 		
-		socket.onopen = () => {
+		socket.onopen = async () => {
 			status = 'Connected';
-			isConnecting = false;
 			pageState = PAGES.CAMERA_VIEW; // Switch to camera view
+			
+			// Wait for DOM to update so videoElement is available
+			await tick();
+			
+			if (videoElement && camera) {
+				videoElement.srcObject = camera;
+			}
+			isConnecting = false;
 		};
 		
 		socket.onmessage = (event) => {
@@ -98,14 +114,23 @@ async function connect() {
 		socket.onclose = () => {
 			status = 'Disconnected. Ready to connect.';
 			isConnecting = false;
+			pageState = PAGES.IP_INPUT; // Go back to start if disconnected
 		};
 		
 		socket.onerror = (err) => {
 			console.error("WebSocket Error:", err);
 			status = 'Connection Failed.';
 			isConnecting = false;
+			alert('Connection failed. Check server address.');
 		};
-	};
+
+	} catch (err) {
+		console.error("Setup error:", err);
+		status = 'Error: ' + err.message;
+		isConnecting = false;
+		alert('Error connecting: ' + err.message);
+		return;
+	}
 }
 
 function startRecording() {
@@ -115,7 +140,10 @@ function startRecording() {
 	status = 'Recording...';
 	if (!camera) return;
 	
-	recorder = new MediaRecorder(camera, { mimeType: 'video/webm' });
+	recorder = new MediaRecorder(camera, { 
+		mimeType: 'video/webm',
+		videoBitsPerSecond: 10000000 // 10 Mbps for good balance
+	});
 	
 	recorder.ondataavailable = (event) => {
 		if (event.data && event.data.size > 0) {
@@ -160,22 +188,14 @@ onDestroy(() => {
 	{#if pageState === PAGES.IP_INPUT}
 		<div class="placeholder" ></div>
 		<div class="contents">
-			<h1>{ipAddress || 'IP ADDRESS'}</h1>
-			<div class="matrix">
-				{#each KEYPAD_ROWS as row}
-					<div class="matrix__row">
-						{#each row as key}
-							<div class="matrix__column" onclick={() => handleKeyPress(key)}>
-								<p>{key}</p>
-							</div>
-						{/each}
-					</div>
-				{/each}
-				<div class="matrix__row">
-					<div class="matrix__column" onclick={() => handleKeyPress('N')}>
-						<p>N</p>
-					</div>
-				</div>
+			<div class="placeholder__action">
+				<button class="btn--white" onclick={connect} disabled={isConnecting}>
+					{#if isConnecting}
+						CONNECTING...
+					{:else}
+						CONNECT
+					{/if}
+				</button>
 			</div>
 		</div>
 	{:else if pageState === PAGES.CAMERA_VIEW}
@@ -215,41 +235,8 @@ onDestroy(() => {
 		min-height: 1.2rem; /* Prevents layout shift when text changes */
 	}
 
-	/* Styles from Addr component */
-	.matrix {
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		align-items: center;
-		margin: 0 1rem;
-	}
-	.matrix__row {
-		display: flex;
-		width: 100%;
-		justify-content: space-between;
-		margin-block: 1.25rem;
-	}
-	.matrix__row:last-child {
-		justify-content: center;
-	}
-	.matrix__row:last-child .matrix__column p {
-		color: white;
-		filter: opacity(1);
-	}
-	.matrix__column {
-		padding: 1rem;
-		cursor: pointer;
-		user-select: none; /* Prevents text selection on click */
-		transition: transform 0.1s ease;
-	}
-	.matrix__column:active {
-		transform: scale(0.9); /* Click feedback */
-	}
-	.matrix__column p {
-		font-weight: 700;
-		color: white;
-		filter: opacity(0.4);
-		font-size: 1.25rem;
+	.placeholder__action {
+		margin-bottom: 2rem;
 	}
 
 	/* Styles from Camera component */
@@ -271,7 +258,7 @@ onDestroy(() => {
 		position: absolute;
 		/* These values are a starting point, adjust them to fit your tablet.png perfectly */
 		width: 95%;
-		height: 90%;
+		height: 90%; 
 		object-fit: cover; /* Ensures video fills the space without distortion */
 		border-radius: 20px; /* Optional: to match rounded corners */
 	}

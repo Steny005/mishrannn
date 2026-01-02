@@ -1,20 +1,34 @@
 <script>
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import CompactDisc from './cd.svelte';
-	import { Fullscreen } from '@boengli/capacitor-fullscreen';
+	import { StatusBar } from '@capacitor/status-bar';
+	import { App } from '@capacitor/app';
 
-	const acc = async () => {
+	onMount(async () => {
 		try {
-			await Fullscreen.activateImmersiveMode();
+			await StatusBar.hide();
 		} catch (error) {
-			console.error('Error enabling fullscreen:', error);
+			console.error('Error hiding status bar:', error);
 		}
-	};
-	acc();
+
+		App.addListener('backButton', () => {
+			if (page === 2) {
+				stopRecording();
+			} else if (page === 1) {
+				if (socket) {
+					socket.close();
+				}
+				resetControls();
+				page = 0;
+			} else {
+				App.exitApp();
+			}
+		});
+	});
 
 	// UI State
 	let page = $state(0);
-	let serverAddressDisplay = $state('IP ADDRESS');
+	let serverAddressDisplay = $state('CONNECT TO SERVER');
 	
 	// WebSocket State
 	let serverAddress = $state('');
@@ -34,24 +48,10 @@
 		}
 	});
 
-	const handleKeyPress = (key) => {
-		if (key === 'C') {
-			serverAddressDisplay = 'IP ADDRESS';
-			return;
-		}
-		if (serverAddressDisplay === 'IP ADDRESS') {
-			serverAddressDisplay = '';
-		}
-		serverAddressDisplay += key;
-	};
-
 	const initiateConnection = () => {
-		const address = serverAddressDisplay.trim();
-		if (!address || address === 'IP ADDRESS') {
-			alert('Please provide a server IP address');
-			return;
-		}
-		serverAddress = address.includes(':') ? address : `${address}:8000`;
+		// Defaulting to 172.19.70.28:8080
+		const address = '172.19.70.28:8080';
+		serverAddress = address;
 		connect(serverAddress);
 	};
 
@@ -183,13 +183,6 @@
 			hostAudioStream.getTracks().forEach(track => track.stop());
 		}
 	});
-
-	const keypadRows = [
-		['1', '2', '3'],
-		['4', '5', '6'],
-		['7', '8', '9'],
-		['.', '0', 'C']
-	];
 </script>
 
 <main class:recording-active={page === 2}>
@@ -198,28 +191,18 @@
 	{#if page === 0}
 		<div class="page-container">
 			<div class="placeholder"></div>
-			<div class="contents">
-				<h1>{serverAddressDisplay}</h1>
-				<div class="matrix">
-					{#each keypadRows as row}
-						<div class="matrix__row">
-							{#each row as key}
-								<div class="matrix__column" onclick={() => handleKeyPress(key)}>
-									<p>{key}</p>
-								</div>
-							{/each}
-						</div>
-					{/each}
-					<div class="matrix__row">
-						<button
-							class="matrix__column connect-btn"
-							onclick={initiateConnection}
-							disabled={isConnecting}
-						>
-							<p>N</p>
-						</button>
-					</div>
-				</div>
+			<div class="placeholder__action">
+				<button 
+					class="btn--white" 
+					onclick={initiateConnection}
+					disabled={isConnecting}
+				>
+					{#if isConnecting}
+						CONNECTING...
+					{:else}
+						CONNECT
+					{/if}
+				</button>
 			</div>
 		</div>
 	{:else if page === 1}
@@ -281,84 +264,29 @@
 		flex: 1;
 	}
 	
-	.content h1,
-	.contents h1 {
-		text-align: center;
-		font-size: 1rem;
-		font-weight: 700;
-	}
-	
 	.placeholder:last-child {
 		display: flex;
 		align-items: flex-end;
 	}
 	
-	.placeholder__action {
-		margin: 1rem;
-		width: 100%;
-	}
-	
 	.contents {
 		margin-inline: 2rem;
 	}
-	
-	.contents h1 {
-		margin-bottom: 1rem;
-	}
-	
-	.matrix {
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		align-items: center;
-		margin: 0 1rem;
-	}
-	
-	.matrix__row {
-		display: flex;
+
+	.placeholder__action {
+		margin-bottom: 2rem;
 		width: 100%;
-		justify-content: space-between;
-		margin-block: 1.25rem;
-	}
-	
-	.matrix__row:last-child {
-		justify-content: center;
-	}
-	
-	.matrix__column {
-		padding: 1rem;
-		cursor: pointer;
-		user-select: none;
-	}
-	
-	.matrix__column p {
-		font-weight: 700;
-		color: #666;
-		font-size: 1.25rem;
-		transition: all ease 0.3s;
+		padding-inline: 2rem;
 	}
 
-	.matrix__column p:hover {
-		color: white;
+	.content h1,
+	.contents h1 {
+		text-align: center;
+		font-size: 1rem;
+		font-weight: 700;
+		margin-bottom: 1rem;
 	}
-	
-	.connect-btn {
-		background: none;
-		border: none;
-		padding: 1rem;
-		cursor: pointer;
-		user-select: none;
-	}
-	
-	.connect-btn p {
-		color: white;
-	}
-	
-	.connect-btn:disabled p {
-		color: #555;
-		cursor: not-allowed;
-	}
-	
+
 	.content__devices {
 		display: flex;
 		justify-content: center;
