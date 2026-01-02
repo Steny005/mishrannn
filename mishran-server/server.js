@@ -25,15 +25,16 @@ wss.on('connection', (socket, req) => {
     const clientId = req.url.split('/').pop();
 
     if (clientId === 'host_monitor') {
-        hostSocket = { socket: socket, ffmpeg: null };
+        const currentHostSocket = { socket: socket, ffmpeg: null };
+        hostSocket = currentHostSocket;
         console.log('✅ Host monitor connected');
         sendHostUpdate();
 
         socket.on('message', (message, isBinary) => {
             if (isBinary) {
                 // Binary audio data from host
-                if (hostSocket && hostSocket.ffmpeg && !hostSocket.ffmpeg.killed && hostSocket.ffmpeg.stdin.writable) {
-                    hostSocket.ffmpeg.stdin.write(message, (err) => {
+                if (currentHostSocket.ffmpeg && !currentHostSocket.ffmpeg.killed && currentHostSocket.ffmpeg.stdin.writable) {
+                    currentHostSocket.ffmpeg.stdin.write(message, (err) => {
                         if (err) console.error(`[HOST WRITE ERROR]:`, err);
                     });
                 }
@@ -51,25 +52,23 @@ wss.on('connection', (socket, req) => {
 
         socket.on('close', () => {
             console.log('❌ Host monitor disconnected');
-            if (hostSocket) {
-                stopFfmpeg(hostSocket, 'host_audio');
+            stopFfmpeg(currentHostSocket, 'host_audio');
+            if (hostSocket === currentHostSocket) {
+                hostSocket = null;
             }
-            hostSocket = null;
         });
 
     } else { // This is a camera client
         console.log(`✅ Client ${clientId} connected`);
-        clients.set(clientId, { socket, isRecording: false, ffmpeg: null });
+        const currentClient = { socket, isRecording: false, ffmpeg: null };
+        clients.set(clientId, currentClient);
         sendHostUpdate();
 
         socket.on('message', (message, isBinary) => {
-            const client = clients.get(clientId);
-            if (!client) return;
-
             if (isBinary) {
                 // Binary video data from client
-                if (client.isRecording && client.ffmpeg && !client.ffmpeg.killed && client.ffmpeg.stdin.writable) {
-                    client.ffmpeg.stdin.write(message, (err) => {
+                if (currentClient.isRecording && currentClient.ffmpeg && !currentClient.ffmpeg.killed && currentClient.ffmpeg.stdin.writable) {
+                    currentClient.ffmpeg.stdin.write(message, (err) => {
                         if (err) console.error(`[CLIENT WRITE ERROR] [${clientId}]:`, err);
                     });
                 }
@@ -78,8 +77,8 @@ wss.on('connection', (socket, req) => {
                     const data = JSON.parse(message);
                     if (data.type === 'recording_fully_stopped') {
                         console.log(`[CLIENT INFO]: Client ${clientId} confirmed recording fully stopped.`);
-                        client.isRecording = false;
-                        stopFfmpeg(client, clientId);
+                        currentClient.isRecording = false;
+                        stopFfmpeg(currentClient, clientId);
                         sendHostUpdate();
                     }
                 } catch (error) {
@@ -90,11 +89,10 @@ wss.on('connection', (socket, req) => {
 
         socket.on('close', () => {
             console.log(`❌ Client ${clientId} disconnected`);
-            const client = clients.get(clientId);
-            if (client) {
-                stopFfmpeg(client, clientId);
+            stopFfmpeg(currentClient, clientId);
+            if (clients.get(clientId) === currentClient) {
+                clients.delete(clientId);
             }
-            clients.delete(clientId);
             sendHostUpdate();
         });
     }
@@ -115,10 +113,14 @@ function startFfmpeg(target, id) {
     // -f webm (input format)
     // -c copy (direct stream copy)
     // -movflags frag_keyframe+empty_moov (fix for abrupt stops)
-    const args = [
-        '-y',
-        '-i', 'pipe:0'
-    ];
+    const args = ['-y'];
+
+    // For host audio, specify input format as webm (sent by MediaRecorder)
+    if (id === 'host_audio') {
+        args.push('-f', 'webm');
+    }
+
+    args.push('-i', 'pipe:0');
 
     // Check if this is a video client (not host audio)
     if (id !== 'host_audio') {
@@ -146,10 +148,11 @@ function startFfmpeg(target, id) {
 
     ffmpeg.stderr.on('data', (data) => {
         // Uncomment for debug
-        console.log(`FFmpeg [${id}]: ${data}`);
+        // console.log(`FFmpeg [${id}]: ${data}`);
     });
 
     ffmpeg.on('close', (code) => {
+        target.ffmpeg = null; // Ensure we can start a new one next time
         fs.stat(fileName, (err, stats) => {
             if (!err) {
                 const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
