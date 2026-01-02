@@ -6,19 +6,93 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const server = http.createServer((req, res) => {
+    if (req.url === '/download') {
+        const filePath = path.join(__dirname, 'refined_output.mp4');
+        if (fs.existsSync(filePath)) {
+            res.writeHead(200, {
+                'Content-Type': 'video/mp4',
+                'Content-Disposition': 'attachment; filename="refined_output.mp4"'
+            });
+            fs.createReadStream(filePath).pipe(res);
+        } else {
+            res.writeHead(404);
+            res.end('Refined video not found. Please wait for processing to finish.');
+        }
+        return;
+    }
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Mishran Server Running');
 });
 const wss = new WebSocketServer({ server });
 
 let clients = new Map();
-let hostSocket = null; // Will store { socket, ffmpeg: null }
+let hostSocket = null; 
 let currentSessionId = null;
+let isProcessing = false;
+let statusText = "";
 
 // Ensure recordings directory exists
 const recordingsDir = path.join(__dirname, 'recordings');
 if (!fs.existsSync(recordingsDir)) {
     fs.mkdirSync(recordingsDir);
+}
+
+function runProcessingPipeline() {
+    if (isProcessing) return;
+    isProcessing = true;
+    statusText = "INITIALIZING PIPELINE";
+    console.log(`\n[PIPELINE]: ${statusText}`);
+    sendHostUpdate();
+
+    const pythonPath = fs.existsSync(path.join(__dirname, '../venv/bin/python')) 
+        ? path.join(__dirname, '../venv/bin/python') 
+        : 'python3';
+
+    // 1. Run audio_cut.py
+    const audioCut = spawn(pythonPath, ['audio_cut.py'], { cwd: __dirname });
+
+    audioCut.stdout.on('data', (data) => {
+        const lines = data.toString().split('\n');
+        for (let line of lines) {
+            const msg = line.trim();
+            if (msg.includes("Analyzing audio")) statusText = "ANALYZING AUDIO";
+            if (msg.includes("Extracting frames")) statusText = "EXTRACTING FRAMES";
+            if (msg.includes("Sending")) statusText = "AI SCORING";
+            if (msg.includes("Rendering")) statusText = "MERGING VIDEO";
+            if (msg.includes("Done")) statusText = "MERGE COMPLETE";
+            sendHostUpdate();
+        }
+    });
+
+    audioCut.on('close', (code) => {
+        if (code !== 0) {
+            statusText = "ERROR: AUDIO CUT FAILED";
+            isProcessing = false;
+            sendHostUpdate();
+            return;
+        }
+
+        // 2. Run refine.py
+        statusText = "STARTING REFINEMENT";
+        sendHostUpdate();
+        const refine = spawn(pythonPath, ['refine.py'], { cwd: __dirname });
+
+        refine.stdout.on('data', (data) => {
+            const lines = data.toString().split('\n');
+            for (let line of lines) {
+                const msg = line.trim();
+                if (msg.includes("Refining video")) statusText = "APPLYING CINEMATIC LOOK";
+                if (msg.includes("Success")) statusText = "SUCCESS";
+                sendHostUpdate();
+            }
+        });
+
+        refine.on('close', (refineCode) => {
+            isProcessing = false;
+            statusText = refineCode === 0 ? "COMPLETE" : "ERROR: REFINEMENT FAILED";
+            sendHostUpdate();
+        });
+    });
 }
 
 wss.on('connection', (socket, req) => {
@@ -44,6 +118,7 @@ wss.on('connection', (socket, req) => {
                     console.log(`[HOST COMMAND]: Received command: ${data.command}`);
                     if (data.command === 'start_all') startAllRecording();
                     if (data.command === 'stop_all') stopAllRecording();
+                    if (data.command === 'start_pipeline') runProcessingPipeline();
                 } catch (error) {
                     // Ignore non-JSON text
                 }
@@ -221,6 +296,8 @@ function sendHostUpdate() {
     hostSocket.socket.send(JSON.stringify({
         type: 'state_update',
         isRecordingAll,
+        isProcessing,
+        statusText,
         clients: clientList
     }));
 }

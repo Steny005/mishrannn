@@ -10,7 +10,7 @@ import requests
 import shutil
 
 # Configuration
-N8N_URL = "https://hari-n8n.laddu.cc/webhook/ai-director-input"
+N8N_URL = os.environ.get("AI_DIRECTOR_URL", "https://hari-n8n.laddu.cc/webhook/ai-director-input")
 FRAMES_DIR = "cut_frames"
 
 def get_latest_session_files():
@@ -39,6 +39,7 @@ def get_latest_session_files():
 def analyze_audio_for_cuts(audio_path, min_duration=3.0):
     """Analyzes audio to find cut points based on silence/pauses."""
     print(f"Analyzing audio for cuts: {audio_path}")
+    sys.stdout.flush()
     try:
         y, sr = librosa.load(audio_path, sr=None)
         total_duration = librosa.get_duration(y=y, sr=sr)
@@ -72,6 +73,7 @@ def analyze_audio_for_cuts(audio_path, min_duration=3.0):
                 final_segments.append((0.0, total_duration))
                 
         print(f"Generated {len(final_segments)} audio-driven segments.")
+        sys.stdout.flush()
         return final_segments
     except Exception as e:
         print(f"Audio analysis failed: {e}. Fallback to 5s chunks.")
@@ -90,6 +92,7 @@ def extract_and_score_segments(segments, video_files, session_id):
     segment_winners = {}
     
     print(f"Extracting frames and scoring {len(segments)} segments...")
+    sys.stdout.flush()
     
     for i, (start, end) in enumerate(segments):
         midpoint = (start + end) / 2.0
@@ -124,6 +127,7 @@ def extract_and_score_segments(segments, video_files, session_id):
             try:
                 payload = {'timestamp_index': str(i), 'session_id': str(session_id)}
                 print(f"Sending {len(files_to_send)} frames to AI Director...")
+                sys.stdout.flush()
                 
                 resp = requests.post(N8N_URL, files=files_to_send, data=payload)
                 resp.raise_for_status()
@@ -251,8 +255,10 @@ def main():
     ])
     
     print(f"Rendering {output_video}...")
+    sys.stdout.flush()
     subprocess.run(cmd)
     print("Done.")
+    sys.stdout.flush()
 
 if __name__ == "__main__":
     main()

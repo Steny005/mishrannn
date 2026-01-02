@@ -1,5 +1,6 @@
 import subprocess
 import os
+import sys
 
 def main():
     input_video = "final_output.mp4"
@@ -7,16 +8,10 @@ def main():
     
     if not os.path.exists(input_video):
         print(f"Error: {input_video} not found. Run merge.py or audio_cut.py first.")
+        sys.stdout.flush()
         return
 
-    # Filter explanation:
-    # 1. hqdn3d: Light denoise to clean up grain
-    # 2. crop: Cut to 2.39:1 aspect ratio
-    # 3. eq: +10% saturation, +5% brightness
-    # 4. curves: S-Curve for contrast
-    # 5. vignette: Cinematic corner darkening
-    # 6. pad: Add black bars back to 16:9
-    # 7. unsharp: Final sharpening
+    # ... (filter_chain remains same) ...
     
     filter_chain = (
         "hqdn3d=1.5:1.5:6:6, "
@@ -41,13 +36,17 @@ def main():
     ]
 
     print(f"Refining video: {input_video} -> {output_video}")
+    sys.stdout.flush()
     print("Applying: Denoise -> 2.39:1 Crop -> Brightness(+5%)/Sat(+10%) -> S-Curve -> Vignette -> Black Bars -> Sharpen")
+    sys.stdout.flush()
     
     try:
         subprocess.run(cmd, check=True)
-        print(f"\nSuccess! Created {output_video}")
+        print(f"Success! Created {output_video}")
+        sys.stdout.flush()
     except subprocess.CalledProcessError as e:
         print(f"Error during FFmpeg processing: {e}")
+        sys.stdout.flush()
 
 if __name__ == "__main__":
     main()
