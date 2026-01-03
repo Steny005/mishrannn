@@ -1,0 +1,18 @@
+services:
+  mishran-server:
+    build:
+      context: .
+    container_name: mishran-server
+    ports:
+      - "8080:8080"
+    environment:
+      - AI_DIRECTOR_URL=https://hari-n8n.laddu.cc/webhook/ai-director-input
+    volumes:
+      - ./recordings:/app/recordings
+      - ./final_output.mp4:/app/final_output.mp4
+      - ./refined_output.mp4:/app/refined_output.mp4
+    restart: unless-stopped
+
+networks:
+  default:
+    name: mishran-network
