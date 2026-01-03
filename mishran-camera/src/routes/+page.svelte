@@ -6,10 +6,11 @@ import { App } from '@capacitor/app';
 import { Camera } from '@capacitor/camera';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 
+import { Capacitor } from '@capacitor/core';
+
 const PAGES = {
 	IP_INPUT: 0,
-	CAMERA_VIEW: 1,
-	PROCESSING: 2
+	CAMERA_VIEW: 1
 };
 
 // Reactive state
@@ -17,20 +18,22 @@ let pageState = $state(PAGES.IP_INPUT);
 let cameraViewStatus = $state('CONNECTED');
 
 onMount(async () => {
-	try {
-		await StatusBar.setOverlaysWebView({ overlay: true });
-		await StatusBar.hide();
-	} catch (error) {
-		console.error('Error setting up environment:', error);
-	}
-
-	App.addListener('backButton', () => {
-		if (pageState === PAGES.CAMERA_VIEW) {
-			disconnectAndReset();
-		} else {
-			App.exitApp();
+	if (Capacitor.isNativePlatform()) {
+		try {
+			await StatusBar.setOverlaysWebView({ overlay: true });
+			await StatusBar.hide();
+		} catch (error) {
+			console.error('Error setting up environment:', error);
 		}
-	});
+
+		App.addListener('backButton', () => {
+			if (pageState === PAGES.CAMERA_VIEW) {
+				disconnectAndReset();
+			} else {
+				App.exitApp();
+			}
+		});
+	}
 });
 
 function disconnectAndReset() {
@@ -51,15 +54,15 @@ let camera = null;
 let socket = null;
 let recorder = null;
 let videoElement;
-// Default IP set to 172.19.70.28:8000 as requested
-let ipAddress = $state('172.19.70.28:8080');
+// Default IP set to Cloudflare domain
+let ipAddress = $state('gcp.laddu.cc');
 let status = $state('Ready to connect');
 let isConnecting = $state(false);
 
 async function connect() {
 	const serverAddress = ipAddress.trim();
 	if (!serverAddress) {
-		alert('Please enter the server IP address and port.');
+		alert('Please enter the server address.');
 		return;
 	}
 	
@@ -83,7 +86,8 @@ async function connect() {
 		console.log("Camera access granted.");
 
 		const clientId = 'client_' + Math.floor(Math.random() * 10000);
-		const wsUrl = `ws://${serverAddress}/${clientId}`;
+		const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+		const wsUrl = `${protocol}://${serverAddress}/${clientId}`;
 		
 		socket = new WebSocket(wsUrl);
 		
@@ -158,11 +162,10 @@ function startRecording() {
 	
 	recorder.onstop = () => {
 		console.log("MediaRecorder has stopped. Notifying server.");
-		status = 'Connected'; // Update the UI status
+		cameraViewStatus = 'CONNECTED'; 
 		if (socket && socket.readyState === WebSocket.OPEN) {
 			socket.send(JSON.stringify({ type: 'recording_fully_stopped' }));
 		}
-		pageState = PAGES.PROCESSING;
 	};
 	
 	recorder.start(1000);
@@ -189,10 +192,14 @@ onDestroy(() => {
 
 		{#if pageState === PAGES.IP_INPUT}
 
-			<div class="placeholder" style="display: flex; justify-content: center; align-items: center;">
+			<div class="placeholder">
+			</div>
 
-				<h1 style="font-size: 1rem; font-weight: 700; min-height: 1.2rem; margin: 0;">READY</h1>
+			<div class="content">
+				<h1>ready</h1>
+			</div>
 
+			<div class="placeholder">
 			</div>
 
 			<div class="contents">
@@ -225,15 +232,6 @@ onDestroy(() => {
 			<div class="img">
 				<img src="/tablet.png" alt="Device Frame" />
 				<video class="video-feed" bind:this={videoElement} autoplay playsinline muted ></video>
-			</div>
-		</div>
-	{:else if pageState === PAGES.PROCESSING}
-		<div class="placeholder" style="display: flex; justify-content: center; align-items: center;">
-			<h1 style="font-size: 1rem; font-weight: 700; min-height: 1.2rem; margin: 0;">PROCESSING</h1>
-		</div>
-		<div class="contents">
-			<div class="placeholder__action">
-				<!-- Future button can go here -->
 			</div>
 		</div>
 	{/if}
@@ -290,5 +288,12 @@ onDestroy(() => {
 		height: 90%; 
 		object-fit: cover; /* Ensures video fills the space without distortion */
 		border-radius: 20px; /* Optional: to match rounded corners */
+	}
+
+	.content h1 {
+		font-size: 1rem;
+		font-weight: 700;
+		text-align: center;
+		text-transform: uppercase;
 	}
 </style>
