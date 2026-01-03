@@ -13,7 +13,15 @@ const server = http.createServer((req, res) => {
                 'Content-Type': 'video/mp4',
                 'Content-Disposition': 'attachment; filename="refined_output.mp4"'
             });
-            fs.createReadStream(filePath).pipe(res);
+            const stream = fs.createReadStream(filePath);
+            stream.on('error', (err) => {
+                console.error(`[DOWNLOAD ERROR]: ${err.message}`);
+                if (!res.headersSent) {
+                    res.writeHead(500);
+                    res.end('Internal Server Error');
+                }
+            });
+            stream.pipe(res);
         } else {
             res.writeHead(404);
             res.end('Refined video not found. Please wait for processing to finish.');

@@ -8,9 +8,13 @@ services:
     environment:
       - AI_DIRECTOR_URL=https://hari-n8n.laddu.cc/webhook/ai-director-input
     volumes:
+      # Mount the recordings directory for persistence
       - ./recordings:/app/recordings
-      - ./final_output.mp4:/app/final_output.mp4
-      - ./refined_output.mp4:/app/refined_output.mp4
+      # Mount the current directory to /app to retrieve processed outputs
+      # We use anonymous volumes to protect the container's internal libraries
+      - .:/app
+      - /app/node_modules
+      - /app/venv
     restart: unless-stopped
 
 networks:
